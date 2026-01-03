@@ -1,0 +1,9 @@
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\bin\Release\BAMparser.exe.config
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\bin\Release\BAMparser.exe
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\bin\Release\BAMparser.pdb
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\obj\Release\BAMparser.csproj.AssemblyReference.cache
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\obj\Release\BAMparser.Properties.Resources.resources
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\obj\Release\BAMparser.csproj.GenerateResource.cache
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\obj\Release\BAMparser.csproj.CoreCompileInputs.cache
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\obj\Release\BAMparser.exe
+C:\Users\Administrator\source\repos\BAMparser\BAMparser\obj\Release\BAMparser.pdb
