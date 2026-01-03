@@ -1,0 +1,521 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
+using Microsoft.Win32;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+
+namespace BAMparsre
+{
+    public class BAMEntry
+    {
+        public string Time { get; set; }
+        public string Path { get; set; }
+        public string Signature { get; set; }
+        public string CheatFlag { get; set; }
+        public string FileName { get; set; }
+    }
+
+    public static class CheatDetection
+    {
+        public static readonly string[] CHEAT_KEYWORDS = {
+            "inject", "dll", "loader", "spoof", "cheat",
+            "aim", "trigger", "esp", "menu", "xenos",
+            "xeno", "synapse", "krnl", "fluxus",
+            "executor", "roblox", "robloxmod", "modmenu", "aimbot",
+            "cheatengine", "cheat-engine", "zenith", "wave", "awp.gg",
+            "volcano", "velocity", "swift", "seliware", "potassium",
+            "solara", "bunni.lol", "sirhurt", "lovreware", "hydrogen",
+            "macsploit", "synapse mac", "illusion", "cryptic", "delta",
+            "codex", "ronin", "isabelle", "matcha", "matrix hub",
+            "photon", "nezur", "dx9ware", "eulen", "loadstring",
+            "bootstrappernew", "jjsploit"
+        };
+
+        public static readonly string[] SUSPICIOUS_FOLDERS = {
+            "\\appdata\\local\\temp",
+            "\\downloads",
+            "\\users\\public",
+            "\\programdata"
+        };
+
+        public static string DetectCheat(string path)
+        {
+            string pathLower = path.ToLower();
+
+            foreach (var keyword in CHEAT_KEYWORDS)
+            {
+                if (pathLower.Contains(keyword))
+                    return "CHEAT-SUS";
+            }
+
+            foreach (var folder in SUSPICIOUS_FOLDERS)
+            {
+                if (pathLower.Contains(folder))
+                    return "SUS-FOLDER";
+            }
+
+            return "CLEAN";
+        }
+    }
+
+    public static class PathConverter
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern uint QueryDosDevice(string lpDeviceName, System.Text.StringBuilder lpTargetPath, int ucchMax);
+
+        public static string ConvertDevicePath(string devicePath)
+        {
+            if (string.IsNullOrEmpty(devicePath) || !devicePath.StartsWith("\\Device\\"))
+                return devicePath;
+
+            foreach (string drive in Environment.GetLogicalDrives())
+            {
+                string driveLetter = drive.Substring(0, 2);
+                System.Text.StringBuilder target = new System.Text.StringBuilder(260);
+
+                if (QueryDosDevice(driveLetter, target, 260) > 0)
+                {
+                    string deviceName = target.ToString();
+                    if (devicePath.StartsWith(deviceName))
+                    {
+                        return devicePath.Replace(deviceName, driveLetter);
+                    }
+                }
+            }
+            return devicePath;
+        }
+    }
+
+    public static class SignatureChecker
+    {
+        public static string CheckSignature(string filePath)
+        {
+            if (!File.Exists(filePath))
+                return "MISSING";
+
+            try
+            {
+                return "UNSIGNED";
+            }
+            catch
+            {
+                return "ERROR";
+            }
+        }
+    }
+
+    public class PasswordForm : Form
+    {
+        private TextBox passwordBox;
+        private Label charLabel;
+        private Label errorLabel;
+        private Button loginBtn;
+
+        public bool PasswordCorrect = false;
+        private const string CORRECT_PASSWORD = "kayatan.com";
+
+        public PasswordForm()
+        {
+            this.Text = "BAM Scanner - Authentication";
+            this.Size = new Size(400, 250);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.BackColor = Color.FromArgb(15, 15, 16);
+
+            Label titleLabel = new Label
+            {
+                Text = "🔒 Enter Password",
+                Font = new Font("Arial", 16, FontStyle.Bold),
+                ForeColor = Color.Lime,
+                Location = new Point(80, 20),
+                AutoSize = true
+            };
+
+            passwordBox = new TextBox
+            {
+                Location = new Point(90, 70),
+                Size = new Size(220, 25),
+                Font = new Font("Arial", 12),
+                MaxLength = 16,
+                PasswordChar = '*'
+            };
+            passwordBox.TextChanged += OnPasswordChanged;
+            passwordBox.KeyPress += OnKeyPress;
+
+            charLabel = new Label
+            {
+                Text = "0/16 characters",
+                Location = new Point(140, 100),
+                ForeColor = Color.Gray,
+                AutoSize = true
+            };
+
+            errorLabel = new Label
+            {
+                Text = "",
+                Location = new Point(110, 125),
+                ForeColor = Color.Red,
+                AutoSize = true
+            };
+
+            loginBtn = new Button
+            {
+                Text = "LOGIN",
+                Location = new Point(140, 150),
+                Size = new Size(120, 35),
+                BackColor = Color.Lime,
+                Font = new Font("Arial", 12, FontStyle.Bold)
+            };
+            loginBtn.Click += OnLogin;
+
+            this.Controls.Add(titleLabel);
+            this.Controls.Add(passwordBox);
+            this.Controls.Add(charLabel);
+            this.Controls.Add(errorLabel);
+            this.Controls.Add(loginBtn);
+
+            passwordBox.Focus();
+        }
+
+        private void OnPasswordChanged(object sender, EventArgs e)
+        {
+            charLabel.Text = $"{passwordBox.Text.Length}/16 characters";
+            errorLabel.Text = "";
+        }
+
+        private void OnKeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (e.KeyChar == (char)13)
+            {
+                OnLogin(sender, e);
+            }
+        }
+
+        private void OnLogin(object sender, EventArgs e)
+        {
+            if (passwordBox.Text == CORRECT_PASSWORD)
+            {
+                PasswordCorrect = true;
+                this.Close();
+            }
+            else
+            {
+                errorLabel.Text = "❌ Incorrect password!";
+                passwordBox.Clear();
+                passwordBox.Focus();
+            }
+        }
+    }
+
+    public class Form1 : Form
+    {
+        private ListView listView;
+        private Button rescanBtn;
+        private Button exportCsvBtn;
+        private Label statusLabel;
+        private List<BAMEntry> currentReport;
+
+        public Form1()
+        {
+            InitializeComponents();
+        }
+
+        private void InitializeComponents()
+        {
+            this.Text = "BAM Scanner";
+            this.Size = new Size(1200, 600);
+            this.BackColor = Color.FromArgb(15, 15, 16);
+            this.StartPosition = FormStartPosition.CenterScreen;
+
+            exportCsvBtn = new Button
+            {
+                Text = "Export CSV",
+                Location = new Point(10, 10),
+                Size = new Size(120, 30)
+            };
+            exportCsvBtn.Click += ExportCSV;
+
+            statusLabel = new Label
+            {
+                Location = new Point(400, 50),
+                Size = new Size(400, 30),
+                Font = new Font("Arial", 14, FontStyle.Bold),
+                ForeColor = Color.Lime,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+
+            rescanBtn = new Button
+            {
+                Text = "RESCAN",
+                Location = new Point(520, 90),
+                Size = new Size(150, 40),
+                BackColor = Color.Red,
+                ForeColor = Color.White,
+                Font = new Font("Arial", 12, FontStyle.Bold)
+            };
+            rescanBtn.Click += OnRescan;
+
+            listView = new ListView
+            {
+                Location = new Point(10, 140),
+                Size = new Size(1160, 400),
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                BackColor = Color.FromArgb(20, 20, 20),
+                ForeColor = Color.White
+            };
+
+            listView.Columns.Add("EXECUTION TIME", 180);
+            listView.Columns.Add("FILE PATH", 450);
+            listView.Columns.Add("SIGNATURE", 120);
+            listView.Columns.Add("CHEAT FLAG", 120);
+            listView.Columns.Add("FILE NAME", 250);
+
+            this.Controls.Add(exportCsvBtn);
+            this.Controls.Add(statusLabel);
+            this.Controls.Add(rescanBtn);
+            this.Controls.Add(listView);
+
+            this.Load += OnLoad;
+        }
+
+        private void OnLoad(object sender, EventArgs e)
+        {
+            PerformScan();
+        }
+
+        private void OnRescan(object sender, EventArgs e)
+        {
+            PerformScan();
+        }
+
+        private void PerformScan()
+        {
+            statusLabel.Text = "Scanning...";
+            listView.Items.Clear();
+
+            currentReport = ReadBAMRegistry();
+
+            foreach (var entry in currentReport)
+            {
+                ListViewItem item = new ListViewItem(entry.Time);
+                item.SubItems.Add(entry.Path);
+                item.SubItems.Add(entry.Signature);
+                item.SubItems.Add(entry.CheatFlag);
+                item.SubItems.Add(entry.FileName);
+
+                if (entry.CheatFlag == "CHEAT-SUS")
+                    item.BackColor = Color.FromArgb(42, 15, 17);
+                else if (entry.CheatFlag == "SUS-FOLDER")
+                    item.BackColor = Color.FromArgb(29, 23, 19);
+                else
+                    item.BackColor = Color.FromArgb(18, 33, 18);
+
+                listView.Items.Add(item);
+            }
+
+            statusLabel.Text = "✓ Scan Complete!";
+
+            string htmlPath = Path.Combine(Environment.CurrentDirectory, "bam_report.html");
+            ExportHTML(currentReport, htmlPath);
+            Process.Start(htmlPath);
+        }
+
+        private List<BAMEntry> ReadBAMRegistry()
+        {
+            List<BAMEntry> entries = new List<BAMEntry>();
+
+            string[] paths = {
+                @"SYSTEM\CurrentControlSet\Services\bam\State\UserSettings",
+                @"SYSTEM\CurrentControlSet\Services\bam\UserSettings",
+                @"SYSTEM\CurrentControlSet\Services\dam\UserSettings"
+            };
+
+            foreach (string basePath in paths)
+            {
+                try
+                {
+                    using (RegistryKey baseKey = Registry.LocalMachine.OpenSubKey(basePath))
+                    {
+                        if (baseKey == null) continue;
+
+                        foreach (string sid in baseKey.GetSubKeyNames())
+                        {
+                            statusLabel.Text = $"Scanning SID: {sid}";
+                            Application.DoEvents();
+
+                            using (RegistryKey userKey = baseKey.OpenSubKey(sid))
+                            {
+                                if (userKey == null) continue;
+
+                                foreach (string valueName in userKey.GetValueNames())
+                                {
+                                    if (valueName == "Version" || valueName == "SequenceNumber") continue;
+
+                                    try
+                                    {
+                                        byte[] data = userKey.GetValue(valueName) as byte[];
+                                        if (data == null || data.Length < 8) continue;
+
+                                        long fileTime = BitConverter.ToInt64(data, 0);
+                                        if (fileTime == 0) continue;
+
+                                        DateTime dateTime = DateTime.FromFileTime(fileTime).ToLocalTime();
+                                        string timeStr = dateTime.ToString("yyyy-MM-dd hh:mm:ss tt");
+
+                                        string convertedPath = PathConverter.ConvertDevicePath(valueName);
+                                        string fileName = Path.GetFileName(convertedPath);
+                                        string cheatFlag = CheatDetection.DetectCheat(convertedPath);
+                                        string signature = SignatureChecker.CheckSignature(convertedPath);
+
+                                        entries.Add(new BAMEntry
+                                        {
+                                            Time = timeStr,
+                                            Path = convertedPath,
+                                            Signature = signature,
+                                            CheatFlag = cheatFlag,
+                                            FileName = fileName
+                                        });
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+                    }
+                    return entries;
+                }
+                catch { }
+            }
+
+            return entries;
+        }
+
+        private void ExportHTML(List<BAMEntry> entries, string filePath)
+        {
+            using (StreamWriter writer = new StreamWriter(filePath))
+            {
+                writer.WriteLine("<!doctype html>");
+                writer.WriteLine("<html><head><meta charset=\"utf-8\"><title>BAM Report</title>");
+                writer.WriteLine("<style>");
+                writer.WriteLine("body { background:#0d0d0f; color:#ddd; font-family: Arial; padding:20px; margin:0; }");
+                writer.WriteLine(".header { margin-bottom: 20px; }");
+                writer.WriteLine("h2 { margin: 0 0 20px 0; color: #ff4d4d; }");
+                writer.WriteLine(".search-container { margin-bottom: 20px; }");
+                writer.WriteLine(".search-box { width: 100%; max-width: 600px; padding: 12px 20px; ");
+                writer.WriteLine("  background: #1a1a1c; border: 2px solid #333; border-radius: 8px; ");
+                writer.WriteLine("  color: #ddd; font-size: 16px; outline: none; }");
+                writer.WriteLine(".search-box:focus { border-color: #ff4d4d; }");
+                writer.WriteLine(".search-box::placeholder { color: #666; }");
+                writer.WriteLine("table { width:100%; border-collapse: collapse; }");
+                writer.WriteLine("th { background:#111; color:#ff4d4d; text-align:left; padding:12px; position: sticky; top: 0; }");
+                writer.WriteLine("td { padding:10px; border-bottom: 1px solid #222; }");
+                writer.WriteLine("tr.hidden { display: none; }");
+                writer.WriteLine(".flag-clean { color: #7cfc00; font-weight: bold; }");
+                writer.WriteLine(".flag-sus { color: #ffd24d; font-weight: bold; }");
+                writer.WriteLine(".flag-cheat { color: #ff6b6b; font-weight: bold; }");
+                writer.WriteLine(".stats { margin: 10px 0; color: #999; font-size: 14px; }");
+                writer.WriteLine("</style></head><body>");
+                
+                writer.WriteLine("<div class='header'>");
+                writer.WriteLine("<h2>🔍 BAM Report Dashboard</h2>");
+                writer.WriteLine("<div class='search-container'>");
+                writer.WriteLine("<input type='text' id='searchBox' class='search-box' placeholder='Search files, paths, timestamps...' />");
+                writer.WriteLine("</div>");
+                writer.WriteLine("<div class='stats' id='statsDisplay'>Showing <span id='visibleCount'>" + entries.Count + "</span> of " + entries.Count + " entries</div>");
+                writer.WriteLine("</div>");
+                
+                writer.WriteLine("<table id='bamTable'>");
+                writer.WriteLine("<thead><tr><th>TIME</th><th>PATH</th><th>SIGNATURE</th><th>FLAG</th><th>NAME</th></tr></thead>");
+                writer.WriteLine("<tbody>");
+
+                foreach (var entry in entries)
+                {
+                    string flagClass = entry.CheatFlag == "CLEAN" ? "flag-clean" :
+                                      (entry.CheatFlag == "SUS-FOLDER" ? "flag-sus" : "flag-cheat");
+                    writer.WriteLine($"<tr><td>{entry.Time}</td><td>{entry.Path}</td><td>{entry.Signature}</td>" +
+                                   $"<td class='{flagClass}'>{entry.CheatFlag}</td><td>{entry.FileName}</td></tr>");
+                }
+
+                writer.WriteLine("</tbody></table>");
+                
+                writer.WriteLine("<script>");
+                writer.WriteLine("const searchBox = document.getElementById('searchBox');");
+                writer.WriteLine("const table = document.getElementById('bamTable');");
+                writer.WriteLine("const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');");
+                writer.WriteLine("const visibleCount = document.getElementById('visibleCount');");
+                writer.WriteLine("");
+                writer.WriteLine("searchBox.addEventListener('input', function() {");
+                writer.WriteLine("  const searchTerm = this.value.toLowerCase();");
+                writer.WriteLine("  let visible = 0;");
+                writer.WriteLine("  ");
+                writer.WriteLine("  for (let i = 0; i < rows.length; i++) {");
+                writer.WriteLine("    const row = rows[i];");
+                writer.WriteLine("    const text = row.textContent.toLowerCase();");
+                writer.WriteLine("    ");
+                writer.WriteLine("    if (text.includes(searchTerm)) {");
+                writer.WriteLine("      row.classList.remove('hidden');");
+                writer.WriteLine("      visible++;");
+                writer.WriteLine("    } else {");
+                writer.WriteLine("      row.classList.add('hidden');");
+                writer.WriteLine("    }");
+                writer.WriteLine("  }");
+                writer.WriteLine("  ");
+                writer.WriteLine("  visibleCount.textContent = visible;");
+                writer.WriteLine("});");
+                writer.WriteLine("");
+                writer.WriteLine("window.addEventListener('load', function() {");
+                writer.WriteLine("  searchBox.focus();");
+                writer.WriteLine("});");
+                writer.WriteLine("</script>");
+                
+                writer.WriteLine("</body></html>");
+            }
+        }
+
+        private void ExportCSV(object sender, EventArgs e)
+        {
+            SaveFileDialog dialog = new SaveFileDialog
+            {
+                Filter = "CSV files (*.csv)|*.csv"
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                using (StreamWriter writer = new StreamWriter(dialog.FileName))
+                {
+                    writer.WriteLine("Time,Path,Signature,CheatFlag,FileName");
+                    foreach (var entry in currentReport)
+                    {
+                        writer.WriteLine($"\"{entry.Time}\",\"{entry.Path}\",\"{entry.Signature}\"," +
+                                       $"\"{entry.CheatFlag}\",\"{entry.FileName}\"");
+                    }
+                }
+                MessageBox.Show("CSV exported successfully!");
+            }
+        }
+    }
+
+    static class Program
+    {
+        [STAThread]
+        static void Main()
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
+            PasswordForm passwordForm = new PasswordForm();
+            passwordForm.ShowDialog();
+
+            if (!passwordForm.PasswordCorrect)
+                return;
+
+            Application.Run(new Form1());
+        }
+    }
+}
